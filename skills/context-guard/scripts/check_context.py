@@ -79,7 +79,8 @@ def read_sample(path):
     return (*(sample or (None, None)), compacted_after, None)
 
 
-def evaluate(path, now=None, max_age=600, warn=50, urgent=70, state=None):
+def evaluate(path, now=None, max_age=600, warn=35, urgent=50, state=None,
+             warn_tokens=128000, urgent_tokens=192000):
     timestamp, info, compacted_after, compaction_timestamp = read_sample(path)
     if info is None:
         return unknown("no_recent_token_sample_in_bounded_tail")
@@ -100,12 +101,20 @@ def evaluate(path, now=None, max_age=600, warn=50, urgent=70, state=None):
     if age < -60:
         return unknown("sample_timestamp_in_future")
     percent = 100 * input_tokens / window
-    level = "high" if percent >= urgent else "watch" if percent >= warn else "normal"
+    high = percent >= urgent or bool(urgent_tokens and input_tokens >= urgent_tokens)
+    watch = percent >= warn or bool(warn_tokens and input_tokens >= warn_tokens)
+    level = "high" if high else "watch" if watch else "normal"
+    triggers = []
+    if percent >= (urgent if high else warn):
+        triggers.append("window_fraction")
+    if (urgent_tokens if high else warn_tokens) and input_tokens >= (urgent_tokens if high else warn_tokens):
+        triggers.append("input_budget")
     result = {
         "status": "ok", "source": "local_codex_last_request",
         "sampled_at": timestamp, "age_seconds": round(max(0, age)),
         "last_input_tokens": input_tokens, "reported_context_window": window,
         "last_input_percent": round(percent, 1), "level": level,
+        "triggered_by": triggers,
         "should_notify": False,
     }
     if compacted_after or age > max_age:
@@ -162,13 +171,18 @@ def main(argv=None):
     parser.add_argument("--session-id", default=os.environ.get("CODEX_THREAD_ID")
                         or os.environ.get("CODEX_SESSION_ID"))
     parser.add_argument("--state-dir", type=Path, help="Default: CODEX_HOME/context-guard")
-    parser.add_argument("--warn-percent", type=float, default=50)
-    parser.add_argument("--urgent-percent", type=float, default=70)
+    parser.add_argument("--warn-percent", type=float, default=35)
+    parser.add_argument("--urgent-percent", type=float, default=50)
+    parser.add_argument("--warn-tokens", type=int, default=128000, help="Input budget; 0 disables")
+    parser.add_argument("--urgent-tokens", type=int, default=192000, help="Input budget; 0 disables")
     parser.add_argument("--max-age-seconds", type=int, default=600)
     parser.add_argument("--record", action="store_true", help="Acknowledge a reminder actually shown")
     args = parser.parse_args(argv)
     if not 0 < args.warn_percent < args.urgent_percent <= 100 or args.max_age_seconds <= 0:
         parser.error("require 0 < warn < urgent <= 100 and positive max age")
+    if min(args.warn_tokens, args.urgent_tokens) < 0 or (args.warn_tokens and args.urgent_tokens
+                                                      and args.warn_tokens >= args.urgent_tokens):
+        parser.error("token budgets must be non-negative and warn < urgent when both enabled")
     try:
         path, error = ((args.session_file, None) if args.session_file else
                        locate_session(args.codex_home, args.session_id))
@@ -179,7 +193,8 @@ def main(argv=None):
             key = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:24]
             state_path = (args.state_dir or args.codex_home / "context-guard") / f"{key}.json"
             result = evaluate(path, max_age=args.max_age_seconds, warn=args.warn_percent,
-                              urgent=args.urgent_percent, state=read_state(state_path))
+                              urgent=args.urgent_percent, state=read_state(state_path),
+                              warn_tokens=args.warn_tokens, urgent_tokens=args.urgent_tokens)
             if args.record:
                 record_state(state_path, result)
     except OSError:

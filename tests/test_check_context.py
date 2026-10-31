@@ -43,8 +43,8 @@ class ContextTests(unittest.TestCase):
         self.assertFalse(result["should_notify"])
 
     def test_threshold_boundaries(self):
-        for tokens, level, notify in [(499, "normal", False), (500, "watch", True),
-                                      (699, "watch", True), (700, "high", True)]:
+        for tokens, level, notify in [(349, "normal", False), (350, "watch", True),
+                                      (499, "watch", True), (500, "high", True)]:
             with self.subTest(tokens=tokens):
                 self.write(event(tokens))
                 result = self.check()
@@ -87,7 +87,7 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(self.check()["status"], "unknown")
 
     def test_ack_suppresses_same_level_and_allows_escalation(self):
-        self.write(event(550))
+        self.write(event(400))
         state_path = self.root / "state.json"
         guard.record_state(state_path, self.check())
         state = guard.read_state(state_path)
@@ -96,11 +96,24 @@ class ContextTests(unittest.TestCase):
         self.assertTrue(self.check(state=state)["should_notify"])
 
     def test_input_drop_and_model_window_change(self):
-        self.write(event(520))
+        self.write(event(400))
         self.assertTrue(self.check(state={"level": "high", "input_tokens": 900})["should_notify"])
         self.write(event(750))
         state = {"level": "high", "input_tokens": 750, "window": 2000}
         self.assertTrue(self.check(state=state)["should_notify"])
+
+    def test_absolute_input_budget_on_large_windows(self):
+        for tokens, level in [(127999, "normal"), (128000, "watch"), (192000, "high")]:
+            self.write(event(tokens, window=1000000))
+            result = self.check()
+            self.assertEqual(result["level"], level)
+            if level != "normal":
+                self.assertIn("input_budget", result["triggered_by"])
+        self.assertEqual(self.check(warn_tokens=0, urgent_tokens=0)["level"], "normal")
+
+    def test_fraction_threshold_can_trigger_before_budget(self):
+        self.write(event(35000, window=100000))
+        self.assertEqual(self.check()["triggered_by"], ["window_fraction"])
 
     def test_compaction_invalidates_old_sample(self):
         self.write(event(900, age=10), {"type": "compacted", "timestamp": NOW.isoformat()})

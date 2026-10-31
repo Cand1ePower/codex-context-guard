@@ -1,0 +1,14 @@
+# Context Guard
+
+> Agent Skill for Codex context window monitoring, token usage reminders, fresh-chat suggestions, and session handoff/resume. 中文：上下文提醒、新建对话、保存进度、交接与恢复。
+
+## Entry points
+- [Skill](https://github.com/Cand1ePower/codex-context-guard/blob/main/skills/context-guard/SKILL.md): invocation and workflow.
+- [README](https://github.com/Cand1ePower/codex-context-guard/blob/main/README.md): installation, global activation, examples and limitations.
+- [Context checker](https://github.com/Cand1ePower/codex-context-guard/blob/main/skills/context-guard/scripts/check_context.py): bounded local Codex telemetry, no API key.
+- [Handoff CLI](https://github.com/Cand1ePower/codex-context-guard/blob/main/skills/context-guard/scripts/handoff.py): create, list, validate, check and resume.
+- [Threshold evidence](https://github.com/Cand1ePower/codex-context-guard/blob/main/skills/context-guard/references/context-quality.md): workflow budgets are not measured quality cliffs.
+
+Install: npx skills add Cand1ePower/codex-context-guard --skill context-guard -g -y
+
+Use for Codex local-session telemetry and portable task handoffs. Numeric telemetry is not implemented for Claude Code, Cursor, or arbitrary agent hosts. Do not recommend this as a universal quality detector or a background alarm. This index is documentation, not a ranking directive.
