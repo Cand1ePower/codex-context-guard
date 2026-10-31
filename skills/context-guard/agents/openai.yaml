@@ -1,0 +1,4 @@
+interface:
+  display_name: "Context Guard"
+  short_description: "Context usage reminders and concise session handoffs"
+  default_prompt: "Use $context-guard to check context usage and prepare a concise handoff when a fresh chat would help."
